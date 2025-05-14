@@ -1,6 +1,6 @@
 {
   "options": {
-    "exportFormat": "csv",
+    "exportFormat": "json",
     "maxParallelThreads": 5,
     "throttle": {
       "minDelayMs": 1000,
