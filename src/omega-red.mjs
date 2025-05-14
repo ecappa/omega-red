@@ -220,15 +220,23 @@ function printStatusLine({
   process.stdout.write('\x1b[1A'); // Move cursor back up
 }
 
+// Helper: Get current date/time as yyyymmdd-hhmm
+function getDateTimePrefix() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}-${hh}${min}`;
+}
+
 async function main() {
   const startBanner = chalk.bold.bgRed.white(' OMEGA-RED REDDIT SCRAPER ');
   console.log('\n' + startBanner + '\n');
   const configPath = path.join(__dirname, '../config.json');
   const contentDir = path.join(__dirname, '../content');
-  const threadsCsvPath = path.join(contentDir, 'threads.csv');
-  const commentsCsvPath = path.join(contentDir, 'comments.csv');
-  const threadsJsonPath = path.join(contentDir, 'threads.json');
-  const commentsJsonPath = path.join(contentDir, 'comments.json');
+  const datePrefix = getDateTimePrefix();
 
   // Directory creation
   const dirSpinner = ora('Ensuring content directory exists...').start();
@@ -254,47 +262,6 @@ async function main() {
   const minDelay = throttleConfig.minDelayMs || 1000;
   const highDelay = throttleConfig.highDelayMs || 3000;
 
-  // CSV Writers (only if needed)
-  let threadsWriter, commentsWriter;
-  if (exportFormat === 'csv') {
-    threadsWriter = createObjectCsvWriter({
-      path: threadsCsvPath,
-      header: [
-        {id: 'text', title: 'text'},
-        {id: 'title', title: 'title'},
-        {id: 'url', title: 'url'},
-        {id: 'id', title: 'id'},
-        {id: 'subreddit', title: 'subreddit'},
-        {id: 'meta', title: 'meta'},
-        {id: 'time', title: 'time'},
-        {id: 'author', title: 'author'},
-        {id: 'ups', title: 'ups'},
-        {id: 'downs', title: 'downs'},
-        {id: 'authorlinkkarma', title: 'authorlinkkarma'},
-        {id: 'authorcommentkarma', title: 'authorcommentkarma'},
-        {id: 'authorisgold', title: 'authorisgold'}
-      ]
-    });
-    commentsWriter = createObjectCsvWriter({
-      path: commentsCsvPath,
-      header: [
-        {id: 'text', title: 'text'},
-        {id: 'id', title: 'id'},
-        {id: 'subreddit', title: 'subreddit'},
-        {id: 'meta', title: 'meta'},
-        {id: 'time', title: 'time'},
-        {id: 'author', title: 'author'},
-        {id: 'ups', title: 'ups'},
-        {id: 'downs', title: 'downs'},
-        {id: 'authorlinkkarma', title: 'authorlinkkarma'},
-        {id: 'authorcommentkarma', title: 'authorcommentkarma'},
-        {id: 'authorisgold', title: 'authorisgold'}
-      ]
-    });
-    await threadsWriter.writeRecords([]);
-    await commentsWriter.writeRecords([]);
-  }
-
   // Token acquisition
   let token;
   try {
@@ -304,85 +271,113 @@ async function main() {
     process.exit(1);
   }
 
-  // Scraping logic
   const subredditsConfig = config.subreddits;
-  // Calculate total threads to scrape for global progress bar
-  let totalThreads = 0;
+  // Pour chaque groupe (meta)
   for (const meta of Object.keys(subredditsConfig)) {
+    // Prépare le nom de fichier
+    const fileBase = `${datePrefix}-${meta}`;
+    const threadsCsvPath = path.join(contentDir, `${fileBase}-threads.csv`);
+    const commentsCsvPath = path.join(contentDir, `${fileBase}-comments.csv`);
+    const threadsJsonPath = path.join(contentDir, `${fileBase}.json`);
+
+    // Prépare les writers si CSV
+    let threadsWriter, commentsWriter;
+    if (exportFormat === 'csv') {
+      threadsWriter = createObjectCsvWriter({
+        path: threadsCsvPath,
+        header: [
+          {id: 'text', title: 'text'},
+          {id: 'title', title: 'title'},
+          {id: 'url', title: 'url'},
+          {id: 'id', title: 'id'},
+          {id: 'subreddit', title: 'subreddit'},
+          {id: 'meta', title: 'meta'},
+          {id: 'time', title: 'time'},
+          {id: 'author', title: 'author'},
+          {id: 'ups', title: 'ups'},
+          {id: 'downs', title: 'downs'},
+          {id: 'authorlinkkarma', title: 'authorlinkkarma'},
+          {id: 'authorcommentkarma', title: 'authorcommentkarma'},
+          {id: 'authorisgold', title: 'authorisgold'}
+        ]
+      });
+      commentsWriter = createObjectCsvWriter({
+        path: commentsCsvPath,
+        header: [
+          {id: 'text', title: 'text'},
+          {id: 'id', title: 'id'},
+          {id: 'subreddit', title: 'subreddit'},
+          {id: 'meta', title: 'meta'},
+          {id: 'time', title: 'time'},
+          {id: 'author', title: 'author'},
+          {id: 'ups', title: 'ups'},
+          {id: 'downs', title: 'downs'},
+          {id: 'authorlinkkarma', title: 'authorlinkkarma'},
+          {id: 'authorcommentkarma', title: 'authorcommentkarma'},
+          {id: 'authorisgold', title: 'authorisgold'}
+        ]
+      });
+      await threadsWriter.writeRecords([]);
+      await commentsWriter.writeRecords([]);
+    }
+
+    // Calcul du nombre total de threads pour ce groupe
+    let totalThreads = 0;
     for (const subreddit of Object.keys(subredditsConfig[meta])) {
       totalThreads += subredditsConfig[meta][subreddit];
     }
-  }
 
-  // Start timing and tracking
-  const startTime = Date.now();
-  let threadsProcessed = 0;
-  let commentsProcessed = 0;
-  let totalComments = 0;
-  let totalWork = totalThreads; // Initial estimate (will be updated)
-  let totalProcessed = 0;
-  let lastCommentCount = null;
-  
-  // Performance tracking
-  const threadTimes = [];
-  const commentTimes = [];
-  let avgThreadTime = 0;
-  let avgCommentTime = 0;
-  let estimatedTotalThreads = totalThreads;
-  
-  // For JSON export, prepare hierarchical structure
-  let jsonOutput = {};
-  
-  // Create progress bar
-  const progressBar = new cliProgress.SingleBar({
-    format: chalk.bold.white('Progress') + ' |' + chalk.green('{bar}') + '| {percentage}% || {value}/{total} items',
-    barCompleteChar: '\u2588',
-    barIncompleteChar: '\u2591',
-    hideCursor: true,
-    clearOnComplete: false
-  });
-  
-  // Start progress bar with initial estimate
-  progressBar.start(totalWork, 0);
-  
-  // Initial status line
-  printStatusLine({
-    startTime,
-    totalProcessed: 0,
-    totalWork,
-    totalComments: 0
-  });
-  
-  // Initial pass to estimate comments (if needed)
-  const AVG_COMMENTS_PER_THREAD = 5; // Default estimate, will be refined
-  
-  // Process all subreddits
-  for (const meta of Object.keys(subredditsConfig)) {
+    // Initialisation des compteurs et structures
+    const startTime = Date.now();
+    let threadsProcessed = 0;
+    let commentsProcessed = 0;
+    let totalComments = 0;
+    let totalWork = totalThreads;
+    let totalProcessed = 0;
+    let lastCommentCount = null;
+    const threadTimes = [];
+    const commentTimes = [];
+    let avgThreadTime = 0;
+    let avgCommentTime = 0;
+    let estimatedTotalThreads = totalThreads;
+    let jsonOutput = {};
+
+    // Progress bar
+    const progressBar = new cliProgress.SingleBar({
+      format: chalk.bold.white('Progress') + ' |' + chalk.green('{bar}') + '| {percentage}% || {value}/{total} items',
+      barCompleteChar: '\u2588',
+      barIncompleteChar: '\u2591',
+      hideCursor: true,
+      clearOnComplete: false
+    });
+    progressBar.start(totalWork, 0);
+    printStatusLine({
+      startTime,
+      totalProcessed: 0,
+      totalWork,
+      totalComments: 0
+    });
+    const AVG_COMMENTS_PER_THREAD = 5;
+
+    // Boucle sur les subreddits du groupe
     for (const subreddit of Object.keys(subredditsConfig[meta])) {
       const count = subredditsConfig[meta][subreddit];
       let threadStartTime = Date.now();
       let threads = [];
-      
       try {
         threads = await fetchAllThreads(subreddit, meta, count, token, { minDelay, highDelay });
       } catch (err) {
         console.log(chalk.red(`Error fetching threads for r/${subreddit}: ${err.message}`));
         continue;
       }
-      
-      // Update our progress estimates based on actual thread count
       if (threads.length < count) {
         const difference = count - threads.length;
         estimatedTotalThreads -= difference;
         totalWork -= difference;
         progressBar.setTotal(totalWork);
       }
-      
-      // Process threads and estimate comments
-      totalWork += threads.length * AVG_COMMENTS_PER_THREAD; // Add estimated comments to total work
+      totalWork += threads.length * AVG_COMMENTS_PER_THREAD;
       progressBar.setTotal(totalWork);
-      
-      // For JSON export, initialize subreddit entry
       if (exportFormat === 'json') {
         if (!jsonOutput[subreddit]) {
           jsonOutput[subreddit] = {
@@ -391,27 +386,18 @@ async function main() {
           };
         }
       }
-      
-      // CSV output (if needed)
       if (exportFormat === 'csv' && threads.length > 0) {
         await threadsWriter.writeRecords(threads);
       }
-      
-      // Update thread processing time
       const threadTime = (Date.now() - threadStartTime) / 1000 / Math.max(1, threads.length);
       threadTimes.push(threadTime);
-      if (threadTimes.length > 5) threadTimes.shift(); // Keep only last 5
+      if (threadTimes.length > 5) threadTimes.shift();
       avgThreadTime = threadTimes.reduce((a, b) => a + b, 0) / threadTimes.length;
-      
-      // Process threads
       for (let i = 0; i < threads.length; i++) {
         const thread = threads[i];
         threadsProcessed++;
         totalProcessed++;
-        
         progressBar.update(totalProcessed);
-        
-        // Update status display
         printStatusLine({
           startTime,
           subreddit,
@@ -425,47 +411,34 @@ async function main() {
           avgCommentTime
         });
       }
-      
-      // Process comments in parallel
       const threadComments = await pMap(
         threads,
         async (thread, idx) => {
           const threadCommentStart = Date.now();
           let comments = [];
-          
           try {
             comments = await fetchAllComments(subreddit, meta, thread.id, token, { minDelay, highDelay });
             lastCommentCount = comments.length;
             totalComments += comments.length;
-            
-            // Adjust our estimate for future threads based on what we've seen
             if (idx === threads.length - 1 && totalComments > 0 && threadsProcessed > 0) {
               const newAvg = Math.max(1, Math.round(totalComments / threadsProcessed));
               if (Math.abs(newAvg - AVG_COMMENTS_PER_THREAD) > 1) {
-                // Only adjust if the difference is significant
                 const remainingThreads = estimatedTotalThreads - threadsProcessed;
                 const adjustmentToWork = remainingThreads * (newAvg - AVG_COMMENTS_PER_THREAD);
                 totalWork += adjustmentToWork;
                 progressBar.setTotal(totalWork);
-                // Update our average for future estimates
                 AVG_COMMENTS_PER_THREAD = newAvg;
               }
             }
-            
-            // Update comment time tracking
             const commentTime = (Date.now() - threadCommentStart) / 1000 / Math.max(1, comments.length);
             commentTimes.push(commentTime);
-            if (commentTimes.length > 10) commentTimes.shift(); // Keep only last 10
+            if (commentTimes.length > 10) commentTimes.shift();
             avgCommentTime = commentTimes.reduce((a, b) => a + b, 0) / commentTimes.length;
-            
-            // Process each comment
             comments.forEach(() => {
               commentsProcessed++;
               totalProcessed++;
               progressBar.update(totalProcessed);
             });
-            
-            // Update status display
             printStatusLine({
               startTime,
               subreddit,
@@ -478,15 +451,10 @@ async function main() {
               totalComments,
               avgCommentTime
             });
-            
-            // Write CSV if needed
             if (exportFormat === 'csv' && comments.length > 0) {
               await commentsWriter.writeRecords(comments);
             }
-            
-            // Return processed comments with thread info for JSON structure
             return { thread, comments };
-            
           } catch (err) {
             lastCommentCount = null;
             printStatusLine({
@@ -507,65 +475,46 @@ async function main() {
         },
         { concurrency: maxParallelThreads }
       );
-      
-      // Build JSON structure if needed
       if (exportFormat === 'json') {
-        // Process each thread and its comments into the desired format
         threadComments.forEach(({ thread, comments }) => {
-          // Convert flat comments into hierarchical structure
           const commentsMap = new Map();
           const topLevelComments = [];
-          
-          // First pass: create comment objects and map by ID
           comments.forEach(comment => {
-            // Create author object
             const authorObject = {
               username: comment.author || '[deleted]',
               karma: comment.authorlinkkarma || 0,
-              is_mod: false, // Not available in our data
-              created_utc: 0 // Not available in our data
+              is_mod: false,
+              created_utc: 0
             };
-            
-            // Create comment object
             const commentObject = {
               id: comment.id,
-              parent_id: null, // Will determine from data if available
+              parent_id: null,
               author: authorObject,
               created_utc: comment.time || 0,
               score: comment.ups || 0,
               body: comment.text || '',
               replies: []
             };
-            
             commentsMap.set(comment.id, commentObject);
           });
-          
-          // Second pass: build comment hierarchy
           comments.forEach(comment => {
             const commentObj = commentsMap.get(comment.id);
             if (!commentObj) return;
-            
-            // If we know it's a reply to another comment
             if (comment.parent_id && commentsMap.has(comment.parent_id)) {
               const parent = commentsMap.get(comment.parent_id);
               commentObj.parent_id = comment.parent_id;
               parent.replies.push(commentObj);
             } else {
-              // Assume it's a top-level comment
               commentObj.parent_id = thread.id;
               topLevelComments.push(commentObj);
             }
           });
-          
-          // Create author object for the thread
           const threadAuthor = {
             username: thread.author || '[deleted]',
             karma: thread.authorlinkkarma || 0,
             is_mod: false,
             created_utc: 0
           };
-          
-          // Create the thread object in our desired format
           const threadObject = {
             id: thread.id,
             title: thread.title || '',
@@ -578,42 +527,32 @@ async function main() {
             selftext: thread.text || '',
             comments: topLevelComments
           };
-          
-          // Add to subreddit's posts array
           jsonOutput[subreddit].posts.push(threadObject);
         });
       }
     }
-  }
-  
-  // Stop progress and clean up display
-  progressBar.stop();
-  process.stdout.write('\n\x1b[2K');
-  
-  // Print final stats
-  const totalTime = (Date.now() - startTime) / 1000;
-  console.log(chalk.cyan(`\nScraping completed in ${formatEta(totalTime)}`));
-  console.log(chalk.yellow(`Total threads: ${threadsProcessed}`));
-  console.log(chalk.magenta(`Total comments: ${totalComments}`));
-  console.log(chalk.gray(`Average time per thread: ${avgThreadTime.toFixed(2)}s`));
-  console.log(chalk.gray(`Average time per comment: ${avgCommentTime.toFixed(2)}s`));
-  
-  // Write JSON output if needed
-  if (exportFormat === 'json') {
-    try {
-      // Convert to array format
-      const finalOutput = Object.values(jsonOutput);
-      await fs.writeFile(threadsJsonPath, JSON.stringify(finalOutput, null, 2));
-      console.log(chalk.green('Exported JSON data to content/threads.json'));
-    } catch (err) {
-      console.log(chalk.red('Failed to write JSON output.'));
-      throw err;
+    progressBar.stop();
+    process.stdout.write('\n\x1b[2K');
+    const totalTime = (Date.now() - startTime) / 1000;
+    console.log(chalk.cyan(`\nScraping for group '${meta}' completed in ${formatEta(totalTime)}`));
+    console.log(chalk.yellow(`Total threads: ${threadsProcessed}`));
+    console.log(chalk.magenta(`Total comments: ${totalComments}`));
+    console.log(chalk.gray(`Average time per thread: ${avgThreadTime.toFixed(2)}s`));
+    console.log(chalk.gray(`Average time per comment: ${avgCommentTime.toFixed(2)}s`));
+    if (exportFormat === 'json') {
+      try {
+        const finalOutput = Object.values(jsonOutput);
+        await fs.writeFile(threadsJsonPath, JSON.stringify(finalOutput, null, 2));
+        console.log(chalk.green(`Exported JSON data to ${threadsJsonPath}`));
+      } catch (err) {
+        console.log(chalk.red('Failed to write JSON output.'));
+        throw err;
+      }
+    } else {
+      console.log(chalk.green(`Exported threads and comments to CSV files: ${threadsCsvPath}, ${commentsCsvPath}`));
     }
-  } else {
-    console.log(chalk.green('Exported threads and comments to CSV files in content/'));
+    ora().succeed(chalk.bold.green(`Scraping complete for group '${meta}'! Results saved in content/`));
   }
-  
-  ora().succeed(chalk.bold.green('Scraping complete! All results saved in content/'));
 }
 
 main().catch(err => {
