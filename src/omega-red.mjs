@@ -167,6 +167,11 @@ function calculateEta(startTime, completed, total) {
   return rate * remaining;
 }
 
+// Helper: Pad number with leading zeros to desired length
+function padNumber(num, length = 4) {
+  return String(num).padStart(length, '0');
+}
+
 // Print status on a single line without scrolling
 function printStatusLine({
   startTime,
@@ -186,10 +191,10 @@ function printStatusLine({
   
   // Format and colorize the status
   let msg = chalk.cyan(`Time: ${elapsed} | ETA: ${eta} | `);
-  msg += chalk.yellow(`Progress: ${totalProcessed}/${totalWork} (${Math.round(totalProcessed/totalWork*100)}%) | `);
+  msg += chalk.yellow(`Progress: ${padNumber(totalProcessed)}/${padNumber(totalWork)} (${Math.round(totalProcessed/totalWork*100)}%) | `);
   
   if (subreddit) {
-    msg += chalk.green(`r/${subreddit}: ${threadIdx}/${threadTotal} | `);
+    msg += chalk.green(`r/${subreddit}: ${padNumber(threadIdx)}/${padNumber(threadTotal)} | `);
   }
   
   if (avgThreadTime) {
@@ -197,11 +202,11 @@ function printStatusLine({
   }
   
   if (typeof commentCount === 'number') {
-    msg += chalk.magenta(`Comments: ${commentCount} | `);
+    msg += chalk.magenta(`Comments: ${padNumber(commentCount)} | `);
   }
   
   if (totalComments > 0) {
-    msg += chalk.blue(`Total Comments: ${totalComments} | `);
+    msg += chalk.blue(`Total Comments: ${padNumber(totalComments)} | `);
   }
   
   if (avgCommentTime) {
