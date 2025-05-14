@@ -1,68 +1,16 @@
 {
-    "news": {
-        "politics": 5000,
-        "worldnews": 5000,
-        "news": 5000,
-        "conspiracy": 5000,
-        "libertarian": 5000,
-        "truereddit": 5000,
-        "conservative": 5000,
-        "offbeat": 5000
-    },
-    "lifestyle": {
-        "food": 5000,
-        "guns": 5000,
-        "motorcycles": 5000,
-        "sex": 5000,
-        "progresspics": 5000,
-        "lifehacks": 5000,
-        "frugal": 5000,
-        "drunk": 5000
-    },
-    "learning": {
-        "todayilearned": 5000,
-        "science": 5000,
-        "askscience": 5000,
-        "space": 5000,
-        "askhistorians": 5000,
-        "youshouldknow": 5000,
-        "explainlikeimfive": 5000
-    },
-    "humor": {
-        "funny": 5000,
-        "adviceanimals": 5000,
-        "imgoingtohellforthis": 5000,
-        "facepalm": 5000,
-        "jokes": 5000,
-        "circlejerk": 5000
-    },
-    "entertainment": {
-        "music": 5000,
-        "movies": 5000,
-        "harrypotter": 5000,
-        "starwars": 5000,
-        "starwars": 5000,
-        "anime": 5000,
-        "comicbooks": 5000
-    },
-    "television": {
-        "gameofthrones": 5000,
-        "doctorwho": 5000,
-        "mylittlepony": 5000,
-        "community": 5000,
-        "breakingbad": 5000,
-        "startrek": 5000,
-        "himym": 5000,
-        "thewalkingdead": 5000
-    },
-    "gaming": {
-        "gaming": 5000,
-        "leagueoflegends": 5000,
-        "pokemon": 5000,
-        "minecraft": 5000,
-        "starcraft": 5000,
-        "dota2": 5000,
-        "skyrim": 5000,
-        "tf2": 5000
+  "options": {
+    "exportFormat": "csv",
+    "maxParallelThreads": 5,
+    "throttle": {
+      "minDelayMs": 1000,
+      "highDelayMs": 3000
     }
+  },
+  "subreddits": {
+    "vibecoding": {
+      "vibecoding": 200,
+      "lovable": 200
+    }
+  }
 }

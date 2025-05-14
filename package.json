@@ -1,18 +1,22 @@
 {
   "name": "omega-red",
-  "version": "1.0.0",
-  "description": "Aggressive reddit scraper",
-  "main": "omega-red.js",
+  "version": "2.0.0",
+  "description": "Modern Reddit scraper (OAuth2, async/await, CSV export)",
+  "type": "module",
+  "main": "src/omega-red.mjs",
   "dependencies": {
-    "async": "^0.9.0",
-    "csv-stringify": "^0.0.6",
-    "natural": "^0.2.1",
-    "redcarb": "^0.0.1",
-    "request": "^2.55.0"
+    "node-fetch": "^3.3.2",
+    "csv-writer": "^1.6.0",
+    "dotenv": "^16.4.5",
+    "natural": "^6.3.0",
+    "chalk": "^5.3.0",
+    "ora": "^7.0.1",
+    "cli-progress": "^3.12.0",
+    "p-map": "^5.5.0"
   },
   "devDependencies": {},
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/omega-red.mjs"
   },
   "repository": {
     "type": "git",

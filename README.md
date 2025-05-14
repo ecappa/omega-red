@@ -1,4 +1,29 @@
-#omega-red
+# omega-red
+
+Omega-Red is a modern, high-performance Reddit scraper designed for researchers, data scientists, and developers who want to collect Reddit threads and comments in bulk. It uses the official Reddit API with OAuth2 authentication, supports robust error handling, and outputs clean CSV files for further analysis. The project features a visually appealing CLI and is easy to configure for your own scraping needs.
+
+## Where to get your Reddit API credentials for the .env file
+
+To use Omega-Red, you need to create a Reddit application to obtain the necessary API credentials. Here's how:
+
+1. Log in to your Reddit account at https://www.reddit.com
+2. Go to [Reddit app preferences](https://www.reddit.com/prefs/apps)
+3. Scroll down and click "Create another application..."
+4. Fill in the name, description, and redirect URI (you can use http://localhost:8080 for the redirect URI)
+5. Select the "script" type
+6. After creation, you will see your app listed. Copy the `client_id` (displayed under the app name) and the `client_secret`
+7. Use your Reddit username and password as well
+8. Fill these values in a `.env` file at the root of your project, like this:
+
+```
+REDDIT_CLIENT_ID=your_client_id
+REDDIT_CLIENT_SECRET=your_client_secret
+REDDIT_USER_AGENT=omega-red-modern/1.0 by yourusername
+REDDIT_USERNAME=your_reddit_username
+REDDIT_PASSWORD=your_reddit_password
+```
+
+---
 
 Aggressive (rate limit disobeying) scraper for reddit.
 
