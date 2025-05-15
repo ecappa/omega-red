@@ -111,7 +111,8 @@ function printStatusLine({
   avgThreadTime,
   commentCount,
   totalComments,
-  avgCommentTime
+  avgCommentTime,
+  ratelimitInfo
 }) {
   const elapsed = formatElapsed(startTime);
   const eta = formatEta(calculateEta(startTime, totalProcessed, totalWork));
@@ -131,6 +132,9 @@ function printStatusLine({
   }
   if (avgCommentTime) {
     msg += chalk.gray(`Avg Comment: ${avgCommentTime.toFixed(2)}s`);
+  }
+  if (ratelimitInfo) {
+    msg += chalk.yellow(' | ' + ratelimitInfo);
   }
   process.stdout.write('\n');
   process.stdout.write('\x1b[2K');
@@ -184,7 +188,7 @@ async function main() {
   let useSinceDate = false;
   if (lastRunTimestamp > 0) {
     const lastDate = new Date(lastRunTimestamp * 1000).toISOString().replace('T', ' ').substring(0, 19);
-    useSinceDate = await promptYesNo(`Une précédente exécution a été détectée (dernier run : ${lastDate}). Voulez-vous ne prendre que les nouveaux threads/commentaires depuis cette date ?`, true);
+    useSinceDate = await promptYesNo(`Une précédente exécution a été détectée (dernier run : ${lastDate}). Voulez-vous ne prendre que les nouveaux threads/commentaires depuis cette date ?`, false);
   }
 
   for (const meta of Object.keys(subredditsConfig)) {
@@ -257,28 +261,34 @@ async function main() {
     autosaveTimer = setInterval(async () => {
       try {
         const finalOutput = Object.values(jsonOutput);
-        // Autosave JSON
-        await fs.writeFile(threadsJsonPath.replace('.json', '-autosave.json'), JSON.stringify(finalOutput, null, 2));
-        // Autosave CSV
+        if (finalOutput.length === 0 || !finalOutput.some(group => group.posts && group.posts.length > 0)) {
+          console.log(chalk.gray('[Autosave] Aucune donnée à sauvegarder (pas de posts).'));
+          return;
+        }
+        const jsonAutosavePath = threadsJsonPath.replace('.json', '-autosave.json');
+        await fs.writeFile(jsonAutosavePath, JSON.stringify(finalOutput, null, 2));
         if (exportFormat === 'csv' || exportFormat === 'md' || exportFormat === 'json') {
-          // Threads CSV
           const threadsCsvAutosavePath = threadsCsvPath.replace('.csv', '-autosave.csv');
-          if (finalOutput.length > 0 && finalOutput[0].posts) {
-            const allThreads = finalOutput.flatMap(group => group.posts.map(post => ({
-              text: post.selftext || '',
-              title: post.title || '',
-              url: post.url || '',
-              id: post.id || '',
-              subreddit: group.subreddit || '',
-              meta,
-              time: post.created_utc || '',
-              author: post.author?.username || '',
-              ups: post.score || '',
-              downs: '',
-              authorlinkkarma: post.author?.karma || '',
-              authorcommentkarma: '',
-              authorisgold: ''
-            })));
+          const allThreads = finalOutput.flatMap(group => 
+            group.posts && group.posts.length > 0 
+              ? group.posts.map(post => ({
+                  text: post.selftext || '',
+                  title: post.title || '',
+                  url: post.url || '',
+                  id: post.id || '',
+                  subreddit: group.subreddit || '',
+                  meta,
+                  time: post.created_utc || '',
+                  author: post.author?.username || '',
+                  ups: post.score || '',
+                  downs: '',
+                  authorlinkkarma: post.author?.karma || '',
+                  authorcommentkarma: '',
+                  authorisgold: ''
+                }))
+              : []
+          );
+          if (allThreads.length > 0) {
             const csvWriter = createObjectCsvWriter({
               path: threadsCsvAutosavePath,
               header: [
@@ -299,29 +309,33 @@ async function main() {
             });
             await csvWriter.writeRecords(allThreads);
           }
-          // Comments CSV
           const commentsCsvAutosavePath = commentsCsvPath.replace('.csv', '-autosave.csv');
-          const allComments = finalOutput.flatMap(group => group.posts.flatMap(post => {
-            function flattenComments(comments) {
-              return comments.flatMap(c => [
-                {
-                  text: c.body || '',
-                  id: c.id || '',
-                  subreddit: group.subreddit || '',
-                  meta,
-                  time: c.created_utc || '',
-                  author: c.author?.username || '',
-                  ups: c.score || '',
-                  downs: '',
-                  authorlinkkarma: c.author?.karma || '',
-                  authorcommentkarma: '',
-                  authorisgold: ''
-                },
-                ...(c.replies ? flattenComments(c.replies) : [])
-              ]);
-            }
-            return flattenComments(post.comments || []);
-          }));
+          const allComments = finalOutput.flatMap(group => 
+            group.posts 
+              ? group.posts.flatMap(post => {
+                  function flattenComments(comments) {
+                    if (!comments || !comments.length) return [];
+                    return comments.flatMap(c => [
+                      {
+                        text: c.body || '',
+                        id: c.id || '',
+                        subreddit: group.subreddit || '',
+                        meta,
+                        time: c.created_utc || '',
+                        author: c.author?.username || '',
+                        ups: c.score || '',
+                        downs: '',
+                        authorlinkkarma: c.author?.karma || '',
+                        authorcommentkarma: '',
+                        authorisgold: ''
+                      },
+                      ...(c.replies && c.replies.length ? flattenComments(c.replies) : [])
+                    ]);
+                  }
+                  return post.comments ? flattenComments(post.comments) : [];
+                })
+              : []
+          );
           if (allComments.length > 0) {
             const csvWriter = createObjectCsvWriter({
               path: commentsCsvAutosavePath,
@@ -342,10 +356,9 @@ async function main() {
             await csvWriter.writeRecords(allComments);
           }
         }
-        // Autosave Markdown
-        if (exportFormat === 'md' || exportFormat === 'json' || exportFormat === 'csv') {
+        if ((exportFormat === 'md' || exportFormat === 'json' || exportFormat === 'csv') && finalOutput.length > 0) {
           const { exportGroupToMarkdown } = await import('./lib/export.js');
-          await exportGroupToMarkdown(meta, jsonOutput, threadsJsonPath.replace('.json', '-autosave.json'));
+          await exportGroupToMarkdown(meta, jsonOutput, jsonAutosavePath);
         }
         console.log(chalk.gray(`\n[Autosave] Données sauvegardées dans tous les formats (JSON, CSV, MD)`));
       } catch (e) {
@@ -374,7 +387,7 @@ async function main() {
       let threads = [];
       try {
         threads = await fetchAllThreads(subreddit, meta, count, token, { minDelay, highDelay });
-        if (useSinceDate) {
+        if (useSinceDate && lastRunTimestamp > 0) {
           threads = threads.filter(t => (t.time || t.created_utc || 0) > lastRunTimestamp);
         }
       } catch (err) {
@@ -387,13 +400,11 @@ async function main() {
         totalWork -= difference;
         progressBar.setTotal(totalWork);
       }
-      if (exportFormat === 'json') {
-        if (!jsonOutput[subreddit]) {
-          jsonOutput[subreddit] = {
-            subreddit,
-            posts: []
-          };
-        }
+      if (!jsonOutput[subreddit]) {
+        jsonOutput[subreddit] = {
+          subreddit,
+          posts: []
+        };
       }
       if (exportFormat === 'csv' && threads.length > 0) {
         await threadsWriter.writeRecords(threads);
@@ -417,7 +428,8 @@ async function main() {
           avgThreadTime,
           commentCount: lastCommentCount,
           totalComments,
-          avgCommentTime
+          avgCommentTime,
+          ratelimitInfo: thread.ratelimitInfo
         });
       }
       const threadComments = await pMap(
@@ -427,7 +439,7 @@ async function main() {
           let comments = [];
           try {
             comments = await fetchAllComments(subreddit, meta, thread.id, token, { minDelay, highDelay });
-            if (useSinceDate) {
+            if (useSinceDate && lastRunTimestamp > 0) {
               comments = comments.filter(c => (c.time || c.created_utc || 0) > lastRunTimestamp);
             }
             lastCommentCount = comments.length;
@@ -451,7 +463,8 @@ async function main() {
               avgThreadTime,
               commentCount: lastCommentCount,
               totalComments,
-              avgCommentTime
+              avgCommentTime,
+              ratelimitInfo: comments[0]?.ratelimitInfo
             });
             if (exportFormat === 'csv' && comments.length > 0) {
               await commentsWriter.writeRecords(comments);
@@ -471,7 +484,8 @@ async function main() {
               avgThreadTime,
               commentCount: lastCommentCount,
               totalComments,
-              avgCommentTime
+              avgCommentTime,
+              ratelimitInfo: err.message
             });
             console.log(chalk.red(`Error fetching comments for thread ${thread.id}: ${err.message}`));
             return { thread, comments: [] };
@@ -479,61 +493,59 @@ async function main() {
         },
         { concurrency: maxParallelThreads }
       );
-      if (exportFormat === 'json') {
-        threadComments.forEach(({ thread, comments }) => {
-          const commentsMap = new Map();
-          const topLevelComments = [];
-          comments.forEach(comment => {
-            const authorObject = {
-              username: comment.author || '[deleted]',
-              karma: comment.authorlinkkarma || 0,
-              is_mod: false,
-              created_utc: 0
-            };
-            const commentObject = {
-              id: comment.id,
-              parent_id: null,
-              author: authorObject,
-              created_utc: comment.time || 0,
-              score: comment.ups || 0,
-              body: comment.text || '',
-              replies: []
-            };
-            commentsMap.set(comment.id, commentObject);
-          });
-          comments.forEach(comment => {
-            const commentObj = commentsMap.get(comment.id);
-            if (!commentObj) return;
-            if (comment.parent_id && commentsMap.has(comment.parent_id)) {
-              const parent = commentsMap.get(comment.parent_id);
-              commentObj.parent_id = comment.parent_id;
-              parent.replies.push(commentObj);
-            } else {
-              commentObj.parent_id = thread.id;
-              topLevelComments.push(commentObj);
-            }
-          });
-          const threadAuthor = {
-            username: thread.author || '[deleted]',
-            karma: thread.authorlinkkarma || 0,
+      threadComments.forEach(({ thread, comments }) => {
+        const commentsMap = new Map();
+        const topLevelComments = [];
+        comments.forEach(comment => {
+          const authorObject = {
+            username: comment.author || '[deleted]',
+            karma: comment.authorlinkkarma || 0,
             is_mod: false,
             created_utc: 0
           };
-          const threadObject = {
-            id: thread.id,
-            title: thread.title || '',
-            author: threadAuthor,
-            created_utc: thread.time || 0,
-            score: thread.ups || 0,
-            num_comments: topLevelComments.length,
-            permalink: `/r/${thread.subreddit}/comments/${thread.id}/`,
-            url: thread.url || `https://www.reddit.com/r/${thread.subreddit}/comments/${thread.id}/`,
-            selftext: thread.text || '',
-            comments: topLevelComments
+          const commentObject = {
+            id: comment.id,
+            parent_id: null,
+            author: authorObject,
+            created_utc: comment.time || 0,
+            score: comment.ups || 0,
+            body: comment.text || '',
+            replies: []
           };
-          jsonOutput[subreddit].posts.push(threadObject);
+          commentsMap.set(comment.id, commentObject);
         });
-      }
+        comments.forEach(comment => {
+          const commentObj = commentsMap.get(comment.id);
+          if (!commentObj) return;
+          if (comment.parent_id && commentsMap.has(comment.parent_id)) {
+            const parent = commentsMap.get(comment.parent_id);
+            commentObj.parent_id = comment.parent_id;
+            parent.replies.push(commentObj);
+          } else {
+            commentObj.parent_id = thread.id;
+            topLevelComments.push(commentObj);
+          }
+        });
+        const threadAuthor = {
+          username: thread.author || '[deleted]',
+          karma: thread.authorlinkkarma || 0,
+          is_mod: false,
+          created_utc: 0
+        };
+        const threadObject = {
+          id: thread.id,
+          title: thread.title || '',
+          author: threadAuthor,
+          created_utc: thread.time || 0,
+          score: thread.ups || 0,
+          num_comments: topLevelComments.length,
+          permalink: `/r/${thread.subreddit}/comments/${thread.id}/`,
+          url: thread.url || `https://www.reddit.com/r/${thread.subreddit}/comments/${thread.id}/`,
+          selftext: thread.text || '',
+          comments: topLevelComments
+        };
+        jsonOutput[subreddit].posts.push(threadObject);
+      });
     }
     progressBar.stop();
     process.stdout.write('\n\x1b[2K');
@@ -543,23 +555,32 @@ async function main() {
     console.log(chalk.magenta(`Total comments: ${totalComments}`));
     console.log(chalk.gray(`Average time per thread: ${avgThreadTime.toFixed(2)}s`));
     console.log(chalk.gray(`Average time per comment: ${avgCommentTime.toFixed(2)}s`));
-    if (exportFormat === 'json' || exportFormat === 'md') {
-      try {
-        const finalOutput = Object.values(jsonOutput);
-        await fs.writeFile(threadsJsonPath, JSON.stringify(finalOutput, null, 2));
-        await fs.writeFile(threadsJsonPath.replace('.json', '-autosave.json'), JSON.stringify(finalOutput, null, 2));
-        console.log(chalk.green(`Exported JSON data to ${threadsJsonPath}`));
-        if (exportFormat === 'md') {
-          await exportGroupToMarkdown(meta, jsonOutput, threadsJsonPath);
+
+    const finalOutput = Object.values(jsonOutput);
+    const hasData = finalOutput.length > 0 && finalOutput.some(group => group.posts && group.posts.length > 0);
+    
+    if (hasData) {
+      if (exportFormat === 'json' || exportFormat === 'md') {
+        try {
+          await fs.writeFile(threadsJsonPath, JSON.stringify(finalOutput, null, 2));
+          await fs.writeFile(threadsJsonPath.replace('.json', '-autosave.json'), JSON.stringify(finalOutput, null, 2));
+          console.log(chalk.green(`Exported JSON data to ${threadsJsonPath}`));
+          if (exportFormat === 'md') {
+            await exportGroupToMarkdown(meta, jsonOutput, threadsJsonPath);
+          }
+        } catch (err) {
+          console.log(chalk.red('Failed to write JSON/Markdown output.'));
+          throw err;
         }
-      } catch (err) {
-        console.log(chalk.red('Failed to write JSON/Markdown output.'));
-        throw err;
+      } else if (exportFormat === 'csv') {
+        console.log(chalk.green(`Exported threads and comments to CSV files: ${threadsCsvPath}, ${commentsCsvPath}`));
       }
+      ora().succeed(chalk.bold.green(`Scraping complete for group '${meta}'! Results saved in content/`));
     } else {
-      console.log(chalk.green(`Exported threads and comments to CSV files: ${threadsCsvPath}, ${commentsCsvPath}`));
+      console.log(chalk.yellow(`No data found or filtered for group '${meta}'. No files written.`));
+      ora().warn(chalk.bold.yellow(`Scraping complete for group '${meta}' but no data was found or all data was filtered out.`));
     }
-    ora().succeed(chalk.bold.green(`Scraping complete for group '${meta}'! Results saved in content/`));
+    
     if (autosaveTimer) clearInterval(autosaveTimer);
   }
   await fs.writeFile(lastRunPath, JSON.stringify({ lastRun: Math.floor(Date.now() / 1000) }));

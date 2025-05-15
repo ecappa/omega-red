@@ -5,6 +5,7 @@ import chalk from 'chalk';
 export async function fetchWithRateLimit(url, options, { maxRetries = 5, baseDelay = 2000, minDelay = 1000, highDelay = 3000 } = {}) {
   let attempt = 0;
   let delay = baseDelay;
+  let lastRateLimitInfo = null;
   while (attempt <= maxRetries) {
     const response = await fetch(url, options);
     // Throttle based on quota
@@ -21,16 +22,22 @@ export async function fetchWithRateLimit(url, options, { maxRetries = 5, baseDel
       } else if (remaining < 10) {
         throttle = Math.max(throttle, highDelay);
       }
-      console.log(chalk.gray(`[ratelimit] Remaining: ${remaining}, Reset in: ${reset}s, Throttle: ${throttle}ms`));
+      if (remaining < 20) {
+        lastRateLimitInfo = `[ratelimit] Remaining: ${remaining}, Reset in: ${reset}s, Throttle: ${throttle}ms`;
+      }
     } else if (!isNaN(remaining) && remaining < 10) {
       throttle = highDelay;
-      console.log(chalk.gray(`[ratelimit] Remaining: ${remaining}, Throttle: ${throttle}ms`));
+      if (remaining < 20) {
+        lastRateLimitInfo = `[ratelimit] Remaining: ${remaining}, Throttle: ${throttle}ms`;
+      }
     }
     if (response.status !== 429) {
       // Clear any previous rate limit message
       if (attempt > 0) process.stdout.write('\r' + ' '.repeat(100) + '\r');
       // Wait before next request to avoid burning the quota
       await new Promise(res => setTimeout(res, throttle));
+      // Ajoute l'info ratelimit sur l'objet response
+      response._ratelimitInfo = lastRateLimitInfo;
       return response;
     }
     // 429 Too Many Requests
