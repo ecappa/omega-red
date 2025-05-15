@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import chalk from 'chalk';
 
+// Fetch with rate limit for Omega-Red-Cappa-Edition
 export async function fetchWithRateLimit(url, options, { maxRetries = 5, baseDelay = 2000, minDelay = 1000, highDelay = 3000 } = {}) {
   let attempt = 0;
   let delay = baseDelay;
@@ -8,9 +9,22 @@ export async function fetchWithRateLimit(url, options, { maxRetries = 5, baseDel
     const response = await fetch(url, options);
     // Throttle based on quota
     const remaining = parseFloat(response.headers.get('x-ratelimit-remaining'));
+    const reset = parseFloat(response.headers.get('x-ratelimit-reset'));
     let throttle = minDelay;
-    if (!isNaN(remaining) && remaining < 10) {
+    let dynamic = false;
+    if (!isNaN(remaining) && !isNaN(reset) && remaining > 0) {
+      // Calcule le délai optimal pour ne pas dépasser la limite
+      throttle = Math.max(minDelay, Math.ceil((reset * 1000) / remaining));
+      dynamic = true;
+      if (remaining < 3) {
+        throttle = Math.max(throttle, 10000); // 10s si on est vraiment limite
+      } else if (remaining < 10) {
+        throttle = Math.max(throttle, highDelay);
+      }
+      console.log(chalk.gray(`[ratelimit] Remaining: ${remaining}, Reset in: ${reset}s, Throttle: ${throttle}ms`));
+    } else if (!isNaN(remaining) && remaining < 10) {
       throttle = highDelay;
+      console.log(chalk.gray(`[ratelimit] Remaining: ${remaining}, Throttle: ${throttle}ms`));
     }
     if (response.status !== 429) {
       // Clear any previous rate limit message

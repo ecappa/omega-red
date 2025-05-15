@@ -1,6 +1,7 @@
 import { fetchWithRateLimit } from './fetchWithRateLimit.js';
 import { normalizeText } from './normalizeText.js';
 
+// Fetch all threads for Omega-Red-Cappa-Edition
 export async function fetchAllThreads(subreddit, meta, count, token, fetchOptions) {
   let after = null;
   let fetched = 0;

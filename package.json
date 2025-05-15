@@ -1,9 +1,9 @@
 {
-  "name": "omega-red",
+  "name": "omega-red-cappa-edition",
   "version": "2.0.0",
   "description": "Modern Reddit scraper (OAuth2, async/await, CSV export)",
   "type": "module",
-  "main": "src/omega-red.mjs",
+  "main": "src/omega-red-cappa-edition.mjs",
   "dependencies": {
     "node-fetch": "^3.3.2",
     "csv-writer": "^1.6.0",
@@ -16,16 +16,16 @@
   },
   "devDependencies": {},
   "scripts": {
-    "start": "node src/omega-red.mjs"
+    "start": "node src/omega-red-cappa-edition.mjs"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/linanqiu/omega-red.git"
+    "url": "git+https://github.com/linanqiu/omega-red-cappa-edition.git"
   },
   "author": "Linan Qiu",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/linanqiu/omega-red/issues"
+    "url": "https://github.com/linanqiu/omega-red-cappa-edition/issues"
   },
-  "homepage": "https://github.com/linanqiu/omega-red#readme"
+  "homepage": "https://github.com/linanqiu/omega-red-cappa-edition#readme"
 }

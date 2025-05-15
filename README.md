@@ -1,117 +1,151 @@
-# omega-red
+# Omega-Red-Cappa-Edition
 
-Omega-Red is a modern, high-performance Reddit scraper designed for researchers, data scientists, and developers who want to collect Reddit threads and comments in bulk. It uses the official Reddit API with OAuth2 authentication, supports robust error handling, and outputs clean CSV files for further analysis. The project features a visually appealing CLI and is easy to configure for your own scraping needs.
+> **Omega-Red-Cappa-Edition** is a modern, modular, high-performance Reddit scraper for researchers, data scientists, and developers. It supports advanced export, incremental scraping, robust error handling, and is highly configurable.
 
-## Where to get your Reddit API credentials for the .env file
+---
 
-To use Omega-Red, you need to create a Reddit application to obtain the necessary API credentials. Here's how:
+## 🛠️ Features & Capabilities
+
+- **Configurable Subreddit Groups**: Organize subreddits into named groups ("metareddits") for batch scraping.
+- **Customizable Thread Limits**: Specify how many threads to scrape per subreddit.
+- **Multiple Export Formats**: Output data as CSV (flat), JSON (hierarchical), or Markdown (readable, nested, shareable).
+- **Incremental Scraping**: Optionally fetch only new threads/comments since the last run (with prompt and timestamp tracking).
+- **Autosave & Crash Recovery**: Periodically saves progress to autosave files (interval configurable), so you never lose more than a few seconds/minutes of work.
+- **Handles Reddit Rate Limiting**: Smart, dynamic throttling based on Reddit API headers (`x-ratelimit-remaining`, `x-ratelimit-reset`), with exponential backoff and clear logging.
+- **Parallelization**: Configurable concurrency for faster scraping, with safe limits to avoid bans.
+- **Text Normalization**: All text is lowercased and tokenized for consistency (TreebankTokenizer).
+- **User-Friendly CLI**: Colored output, progress bar, ETA, and real-time status line.
+- **Prompted Configuration**: Prompts for export format and incremental scraping at launch if not set.
+- **Per-Group Output**: Files are generated per group, with timestamped filenames for easy archiving.
+- **Modular Codebase**: Helpers, exporters, and fetchers are separated for maintainability and extensibility.
+- **Safe Interruption**: On Ctrl+C, the script attempts a final autosave before exiting.
+- **Respects Reddit API**: Uses OAuth2, supports all required credentials, and adapts to API feedback.
+
+---
+
+## Reddit API credentials
+
+To use Omega-Red-Cappa-Edition, you need to create a Reddit application to obtain the necessary API credentials. Here's how:
 
 1. Log in to your Reddit account at https://www.reddit.com
 2. Go to [Reddit app preferences](https://www.reddit.com/prefs/apps)
-3. Scroll down and click "Create another application..."
-4. Fill in the name, description, and redirect URI (you can use http://localhost:8080 for the redirect URI)
+3. Click "Create another application..."
+4. Fill in the name, description, and redirect URI (e.g. http://localhost:8080)
 5. Select the "script" type
-6. After creation, you will see your app listed. Copy the `client_id` (displayed under the app name) and the `client_secret`
+6. After creation, copy the `client_id` and `client_secret`
 7. Use your Reddit username and password as well
-8. Fill these values in a `.env` file at the root of your project, like this:
+8. Fill these values in a `.env` file at the root of your project:
 
 ```
 REDDIT_CLIENT_ID=your_client_id
 REDDIT_CLIENT_SECRET=your_client_secret
-REDDIT_USER_AGENT=omega-red-modern/1.0 by yourusername
+REDDIT_USER_AGENT=omega-red-cappa-edition/1.0 by yourusername
 REDDIT_USERNAME=your_reddit_username
 REDDIT_PASSWORD=your_reddit_password
 ```
 
 ---
 
-Aggressive (rate limit disobeying) scraper for reddit.
+## Quick Start
 
-##Quick Start
+1. **Configure your scraping job:**
+   - Edit `config.json` to specify which subreddits to scrape, how many threads, and global options.
+   - Example:
+     ```json
+     {
+       "options": {
+         "exportFormat": "md", // or "csv", "json"
+         "maxParallelThreads": 5,
+         "autosaveIntervalSec": 60,
+         "throttle": {
+           "minDelayMs": 1000,
+           "highDelayMs": 3000
+         }
+       },
+       "subreddits": {
+         "vibecoding": {
+           "vibecoding": 200,
+           "lovable": 200
+         },
+         "saas": {
+           "SaaS": 200,
+           "microsaas": 200
+         }
+       }
+     }
+     ```
+   - Each top-level key in `subreddits` is a group (metareddit). Each value is an object mapping subreddit names to the number of threads to scrape.
+   - The `options` object controls global behavior (see below).
 
-Add in the subreddits you want to scrape into the `config.json` file. 
+2. **Run the scraper:**
+   - Execute:
+     ```sh
+     node src/omega-red-cappa-edition.mjs
+     ```
+   - The script will prompt for export format if not set, and ask if you want to fetch only new threads/comments since the last run (if applicable).
 
-```js
-{
-  "law": {
-    "law": 200,
-    "legaled": 200,
-    "cyberlaws": 200,
-    "isthislegal": 200,
-    "legalnews": 200,
-    "lsat": 200
-  },
-  "technology": {
-    "technology": 200,
-    "android": 200,
-    "bitcoin": 200,
-    "programming": 200,
-    "apple": 200
-  }
-}
-```
+---
 
-Each object in the `config.json` is a "metareddit", a tag for a group of subreddits. Each of the keys of the object is a subreddit, with its value the number of threads to scrape.
+## Output Files
 
-In this case, I'm scraping two "meta"s, each having their own subreddits.
+- **Per Group:** For each group in your config, files are generated with a timestamp prefix (e.g. `20240514-1942-vibecoding.json`).
+- **Formats:**
+  - **CSV:**
+    - `*-threads.csv` and `*-comments.csv` (flat tables)
+  - **JSON:**
+    - `*.json` (hierarchical: subreddit → posts → comments tree)
+  - **Markdown (MD):**
+    - `*.md` (readable, formatted for humans, with posts and nested comments)
+- **Autosave:**
+  - Every X seconds (configurable), a `*-autosave.json` is written with current progress.
 
-The scraper will try its best to approximate the number of threads specified subject to errors and length of the subreddit.
+---
 
-To start the scraper, run
+## Configuration Parameters
 
-```js
-$ node omega-red.js
-```
+- **options.exportFormat**: `"csv"`, `"json"`, or `"md"` — Output format (prompted if missing)
+- **options.maxParallelThreads**: Number of threads to fetch in parallel (default: 5)
+- **options.autosaveIntervalSec**: Interval (in seconds) for autosave (default: 60)
+- **options.throttle.minDelayMs**: Minimum delay between requests (default: 1000)
+- **options.throttle.highDelayMs**: Delay when close to Reddit quota (default: 3000)
+- **subreddits**: Object of groups, each mapping subreddit names to thread counts
 
-The scraper will then run.
+---
 
-##Nitty Gritty
+## Incremental Scraping & Resume
 
-###Buffering
-The scraper uses a buffered write stream, meaning that writes to the disk will happen in bursts. Hence, observing file size to see progress will be inaccurate since quite a large amount of data can be cached.
+- On each run, the script checks for a `last_run.json` file.
+- If found, it prompts: _"Do you want to fetch only new threads/comments since [last date]?"_
+- If yes, only items newer than the last run are fetched and exported.
+- At the end of each run, `last_run.json` is updated with the current timestamp.
+- Autosave ensures you never lose more than a few seconds/minutes of work.
 
-###Rate Limits
-Reddit will rate limit excessive queries. Hence, (increasingly towards the end of scraping) omega-red will produce error messages such as `Rate limited. Waiting 531 ms`. It uses an exponential backoff for waiting time (with maximum of 30,000ms). This is aimed at reducing the likelihood of multiple scrapers jamming the query.
+---
 
-###Outputs
-Outputs two `.csv`s: `threads.csv` and `comments.csv`. Both CSVs have no headers. The meaning of the columns are:
+## Output File Structure
 
-####Threads
+- **CSV:**
+  - `*-threads.csv` columns: `text`, `title`, `url`, `id`, `subreddit`, `meta`, `time`, `author`, `ups`, `downs`, `authorlinkkarma`, `authorcommentkarma`, `authorisgold`
+  - `*-comments.csv` columns: `text`, `id`, `subreddit`, `meta`, `time`, `author`, `ups`, `downs`, `authorlinkkarma`, `authorcommentkarma`, `authorisgold`
+- **JSON:**
+  - Hierarchical: array of subreddits, each with posts, each with nested comments (with author info, score, etc.)
+- **Markdown:**
+  - Human-readable, with posts, metadata, and nested comments, suitable for sharing or archiving.
 
-```js
-['text', 'title', 'url', 'id', 'subreddit', 'meta', 'time', 'author', 'ups', 'downs', 'authorlinkkarma', 'authorcommentkarma', 'authorisgold']
-```
+---
 
-- `text`: text of the thread
-- `title`: title of the thread
-- `url`: url of the thread
-- `id`: unique ID of the thread
-- `subreddit`: subreddit that the thread belongs to
-- `meta`: meta tag assigned to the subreddit of the thread in `config.json`
-- `time`: timestamp of the thread
-- `author`: username of the author of the thread
-- `ups`: number of ups the thread has received
-- `downs`: number of downs the thread has received
-- `authorlinkkarma`: the author's link karma
-- `authorcommentkarma`: the author's comment karma
-- `authorisgold`: `1` if the author has gold status, `0` otherwise
+## Code Structure & Modularization
 
-####Comments
+- **src/omega-red-cappa-edition.mjs**: Main script, orchestrates scraping and export.
+- **src/lib/helpers.js**: Utility functions (timing, formatting, prompts, etc.)
+- **src/lib/export.js**: Exporters for Markdown (and future formats)
+- **src/lib/fetchAllThreads.js**: Fetches threads for a subreddit
+- **src/lib/fetchAllComments.js**: Fetches comments for a thread
+- **src/lib/fetchWithRateLimit.js**: Handles Reddit API rate limiting
+- **src/lib/normalizeText.js**: Text normalization utilities
 
-```js
-['text', 'id', 'subreddit', 'meta', 'time', 'author', 'ups', 'downs', 'authorlinkkarma', 'authorcommentkarma', 'authorisgold']
-```
+---
 
-- `text`: text of the comment
-- `id`: unique ID of the comment
-- `subreddit`: subreddit that the thread belongs to
-- `meta`: meta tag assigned to the subreddit of the thread in `config.json`
-- `time`: timestamp of the thread
-- `author`: username of the author of the thread
-- `ups`: number of ups the thread has received
-- `downs`: number of downs the thread has received
-- `authorlinkkarma`: the author's link karma
-- `authorcommentkarma`: the author's comment karma
-- `authorisgold`: `1` if the author has gold status, `0` otherwise
+## Disclaimer
 
-All text is normalized to lower case, tokenized using a TreebankTokenizer from [natural](https://github.com/NaturalNode/natural), then joined with spaces. This results in punctuation being separated from words, a desired effect.
+This tool is aggressive and may violate Reddit's terms of service. Use responsibly and at your own risk. Excessive scraping can result in IP bans or other penalties from Reddit.

@@ -1,8 +1,7 @@
 {
   "options": {
-    "exportFormat": "md",
+    "exportFormat": "json",
     "maxParallelThreads": 5,
-    "autosaveIntervalSec": 60,
     "throttle": {
       "minDelayMs": 1000,
       "highDelayMs": 3000
@@ -10,12 +9,8 @@
   },
   "subreddits": {
     "vibecoding": {
-      "vibecoding": 5,
-      "lovable": 5
-    },
-    "saas": {
-      "SaaS": 5,
-      "microsaas": 5
+      "vibecoding": 200,
+      "lovable": 200
     }
   }
 }
