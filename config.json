@@ -3,6 +3,7 @@
     "exportFormat": "md",
     "maxParallelThreads": 5,
     "autosaveIntervalSec": 60,
+    "maxMarkdownSizeMB": 1,
     "throttle": {
       "minDelayMs": 1000,
       "highDelayMs": 3000

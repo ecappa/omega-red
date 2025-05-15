@@ -147,14 +147,16 @@ async function main() {
   console.log('\n' + startBanner + '\n');
   const configPath = path.join(__dirname, '../config.json');
   const contentDir = path.join(__dirname, '../content');
+  const autosaveDir = path.join(contentDir, 'autosave');
   const datePrefix = getDateTimePrefix();
 
-  const dirSpinner = ora('Ensuring content directory exists...').start();
+  const dirSpinner = ora('Ensuring content directories exist...').start();
   try {
     await fs.mkdir(contentDir, { recursive: true });
-    dirSpinner.succeed(chalk.green('Content directory ready.'));
+    await fs.mkdir(autosaveDir, { recursive: true });
+    dirSpinner.succeed(chalk.green('Content directories ready.'));
   } catch (err) {
-    dirSpinner.fail(chalk.red('Failed to create content directory.'));
+    dirSpinner.fail(chalk.red('Failed to create content directories.'));
     throw err;
   }
 
@@ -165,11 +167,17 @@ async function main() {
     console.error(chalk.red('Failed to read config.json:'), err.message);
     process.exit(1);
   }
+  
+  // Ensure default values for new options
+  if (!config.options) config.options = {};
+  if (!config.options.maxMarkdownSizeMB) config.options.maxMarkdownSizeMB = 1;
+  
   let exportFormat = await promptExportFormat(configPath, config);
   const maxParallelThreads = (config.options && config.options.maxParallelThreads) || 5;
   const throttleConfig = (config.options && config.options.throttle) || {};
   const minDelay = throttleConfig.minDelayMs || 1000;
   const highDelay = throttleConfig.highDelayMs || 3000;
+  const maxMarkdownSizeMB = (config.options && config.options.maxMarkdownSizeMB) || 1;
 
   let token;
   try {
@@ -196,6 +204,12 @@ async function main() {
     const threadsCsvPath = path.join(contentDir, `${fileBase}-threads.csv`);
     const commentsCsvPath = path.join(contentDir, `${fileBase}-comments.csv`);
     const threadsJsonPath = path.join(contentDir, `${fileBase}.json`);
+    
+    // Chemins pour les fichiers d'autosave
+    const autosaveJsonPath = path.join(autosaveDir, `${fileBase}-autosave.json`);
+    const autosaveThreadsCsvPath = path.join(autosaveDir, `${fileBase}-threads-autosave.csv`);
+    const autosaveCommentsCsvPath = path.join(autosaveDir, `${fileBase}-comments-autosave.csv`);
+    const autosaveMdPath = path.join(autosaveDir, `${fileBase}-autosave.md`);
 
     let threadsWriter, commentsWriter;
     if (exportFormat === 'csv') {
@@ -261,14 +275,22 @@ async function main() {
     autosaveTimer = setInterval(async () => {
       try {
         const finalOutput = Object.values(jsonOutput);
+        // Ne rien faire si aucune donnée n'est présente
         if (finalOutput.length === 0 || !finalOutput.some(group => group.posts && group.posts.length > 0)) {
           console.log(chalk.gray('[Autosave] Aucune donnée à sauvegarder (pas de posts).'));
           return;
         }
-        const jsonAutosavePath = threadsJsonPath.replace('.json', '-autosave.json');
-        await fs.writeFile(jsonAutosavePath, JSON.stringify(finalOutput, null, 2));
-        if (exportFormat === 'csv' || exportFormat === 'md' || exportFormat === 'json') {
-          const threadsCsvAutosavePath = threadsCsvPath.replace('.csv', '-autosave.csv');
+
+        // Autosave seulement dans le format choisi par l'utilisateur
+        let autosaveMsg = '';
+        
+        if (exportFormat === 'json') {
+          // Autosave JSON uniquement
+          await fs.writeFile(autosaveJsonPath, JSON.stringify(finalOutput, null, 2));
+          autosaveMsg = `JSON (${autosaveJsonPath})`;
+        } 
+        else if (exportFormat === 'csv') {
+          // Autosave CSV uniquement
           const allThreads = finalOutput.flatMap(group => 
             group.posts && group.posts.length > 0 
               ? group.posts.map(post => ({
@@ -290,7 +312,7 @@ async function main() {
           );
           if (allThreads.length > 0) {
             const csvWriter = createObjectCsvWriter({
-              path: threadsCsvAutosavePath,
+              path: autosaveThreadsCsvPath,
               header: [
                 {id: 'text', title: 'text'},
                 {id: 'title', title: 'title'},
@@ -309,7 +331,7 @@ async function main() {
             });
             await csvWriter.writeRecords(allThreads);
           }
-          const commentsCsvAutosavePath = commentsCsvPath.replace('.csv', '-autosave.csv');
+          
           const allComments = finalOutput.flatMap(group => 
             group.posts 
               ? group.posts.flatMap(post => {
@@ -338,7 +360,7 @@ async function main() {
           );
           if (allComments.length > 0) {
             const csvWriter = createObjectCsvWriter({
-              path: commentsCsvAutosavePath,
+              path: autosaveCommentsCsvPath,
               header: [
                 {id: 'text', title: 'text'},
                 {id: 'id', title: 'id'},
@@ -355,12 +377,23 @@ async function main() {
             });
             await csvWriter.writeRecords(allComments);
           }
-        }
-        if ((exportFormat === 'md' || exportFormat === 'json' || exportFormat === 'csv') && finalOutput.length > 0) {
+          autosaveMsg = `CSV (${autosaveThreadsCsvPath}, ${autosaveCommentsCsvPath})`;
+        } 
+        else if (exportFormat === 'md') {
+          // Pour le format MD, nous avons toujours besoin de sauvegarder le JSON source
+          await fs.writeFile(autosaveJsonPath, JSON.stringify(finalOutput, null, 2));
+          
+          // Puis générer le Markdown
           const { exportGroupToMarkdown } = await import('./lib/export.js');
-          await exportGroupToMarkdown(meta, jsonOutput, jsonAutosavePath);
+          const mdFiles = await exportGroupToMarkdown(meta, jsonOutput, autosaveJsonPath, { 
+            maxMarkdownSizeMB,
+            isAutosave: true
+          });
+          
+          autosaveMsg = `Markdown (${mdFiles.length} fichier${mdFiles.length > 1 ? 's' : ''})`;
         }
-        console.log(chalk.gray(`\n[Autosave] Données sauvegardées dans tous les formats (JSON, CSV, MD)`));
+        
+        console.log(chalk.gray(`\n[Autosave] Données sauvegardées au format ${autosaveMsg} dans content/autosave/`));
       } catch (e) {
         console.log(chalk.red('[Autosave] Erreur lors de la sauvegarde automatique :'), e.message);
       }
@@ -563,10 +596,17 @@ async function main() {
       if (exportFormat === 'json' || exportFormat === 'md') {
         try {
           await fs.writeFile(threadsJsonPath, JSON.stringify(finalOutput, null, 2));
-          await fs.writeFile(threadsJsonPath.replace('.json', '-autosave.json'), JSON.stringify(finalOutput, null, 2));
+          await fs.writeFile(autosaveJsonPath, JSON.stringify(finalOutput, null, 2));
           console.log(chalk.green(`Exported JSON data to ${threadsJsonPath}`));
           if (exportFormat === 'md') {
-            await exportGroupToMarkdown(meta, jsonOutput, threadsJsonPath);
+            const { exportGroupToMarkdown } = await import('./lib/export.js');
+            const mdFiles = await exportGroupToMarkdown(meta, jsonOutput, threadsJsonPath, { 
+              maxMarkdownSizeMB,
+              isAutosave: false
+            });
+            if (mdFiles.length > 1) {
+              console.log(chalk.green(`Markdown data was split into ${mdFiles.length} files due to size limits.`));
+            }
           }
         } catch (err) {
           console.log(chalk.red('Failed to write JSON/Markdown output.'));
