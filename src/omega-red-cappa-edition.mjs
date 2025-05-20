@@ -15,6 +15,11 @@ import { fetchAllComments } from './lib/fetchAllComments.js';
 import { wait, padNumber, formatEta, formatElapsed, calculateEta, formatDate, mdEscape, promptYesNo } from './lib/helpers.js';
 import { exportGroupToMarkdown } from './lib/export.js';
 
+// References to the current autosave handler and timer so we can
+// perform a final save on interruption.
+let currentAutosave = null;
+let autosaveTimer = null;
+
 // Load environment variables
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -270,9 +275,9 @@ async function main() {
     let estimatedTotalThreads = totalThreads;
     let jsonOutput = {};
 
-    let autosaveTimer;
     let autosaveInterval = (config.options && config.options.autosaveIntervalSec) || 60;
-    autosaveTimer = setInterval(async () => {
+
+    async function performAutosave() {
       try {
         const finalOutput = Object.values(jsonOutput);
         // Ne rien faire si aucune donnée n'est présente
@@ -397,7 +402,10 @@ async function main() {
       } catch (e) {
         console.log(chalk.red('[Autosave] Erreur lors de la sauvegarde automatique :'), e.message);
       }
-    }, autosaveInterval * 1000);
+    }
+
+    currentAutosave = performAutosave;
+    autosaveTimer = setInterval(performAutosave, autosaveInterval * 1000);
 
     const progressBar = new cliProgress.SingleBar({
       format: chalk.bold.white('Progress') + ' |' + chalk.green('{bar}') + '| {percentage}% || {value}/{total} items',
@@ -628,6 +636,14 @@ async function main() {
 
 process.on('SIGINT', async () => {
   console.log(chalk.red('\nInterruption détectée, sauvegarde en cours...'));
+  if (autosaveTimer) clearInterval(autosaveTimer);
+  if (currentAutosave) {
+    try {
+      await currentAutosave();
+    } catch (e) {
+      console.log(chalk.red('Erreur lors de la sauvegarde finale :'), e.message);
+    }
+  }
   process.exit(1);
 });
 
